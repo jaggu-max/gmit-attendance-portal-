@@ -1,16 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
-  LayoutDashboard, Building2, BookOpen, History, AlertTriangle, BarChart3, Download, Loader2, Users, CheckCircle2, AlertCircle,
+  LayoutDashboard, Building2, BookOpen, History, AlertTriangle, BarChart3, Download, Loader2, Users, CheckCircle2, AlertCircle, UserPlus, Pencil, Save, X, KeyRound, Eye, EyeOff,
 } from "lucide-react";
 import { PortalShell, GlassCard, type NavItem } from "./portal-shell";
 import { readApi, friendly, prettyDate } from "@/lib/clientApi";
+import { downloadExcel } from "@/lib/exportExcel";
 import { cn } from "@/lib/utils";
 
 const NAV: NavItem[] = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { key: "students", label: "Register Students", icon: UserPlus },
   { key: "sections", label: "Sections", icon: Building2 },
   { key: "subjects", label: "Subjects", icon: BookOpen },
   { key: "history", label: "Attendance History", icon: History },
@@ -40,6 +42,33 @@ export function HodPortal() {
   const [allSubjectStudents, setAllSubjectStudents] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
   const [hist, setHist] = useState<any[]>([]);
+  const [registeredStudents, setRegisteredStudents] = useState<any[]>([]);
+  const [studentsLoading, setStudentsLoading] = useState(false);
+  const [studentSaving, setStudentSaving] = useState(false);
+  const [studentUsn, setStudentUsn] = useState("");
+  const [studentName, setStudentName] = useState("");
+  const [studentMessage, setStudentMessage] = useState<{ error: boolean; text: string } | null>(null);
+  const [editingStudentUsn, setEditingStudentUsn] = useState<string | null>(null);
+  const [editingStudentName, setEditingStudentName] = useState("");
+  const [studentEditSaving, setStudentEditSaving] = useState(false);
+  const [subjectCourseCode, setSubjectCourseCode] = useState("");
+  const [subjectName, setSubjectName] = useState("");
+  const [subjectTeacher, setSubjectTeacher] = useState("");
+  const [subjectConducted, setSubjectConducted] = useState("0");
+  const [subjectSaving, setSubjectSaving] = useState(false);
+  const [subjectMessage, setSubjectMessage] = useState<{ error: boolean; text: string } | null>(null);
+  const [editingSubjectCode, setEditingSubjectCode] = useState<string | null>(null);
+  const [editingSubjectName, setEditingSubjectName] = useState("");
+  const [editingSubjectTeacher, setEditingSubjectTeacher] = useState("");
+  const [editingSubjectConducted, setEditingSubjectConducted] = useState("0");
+  const [subjectEditSaving, setSubjectEditSaving] = useState(false);
+  const [passwordSubject, setPasswordSubject] = useState<any>(null);
+  const [facultyPassword, setFacultyPassword] = useState("");
+  const [facultyPasswordConfirm, setFacultyPasswordConfirm] = useState("");
+  const [showFacultyPassword, setShowFacultyPassword] = useState(false);
+  const [showFacultyPasswordConfirm, setShowFacultyPasswordConfirm] = useState(false);
+  const [facultyPasswordSaving, setFacultyPasswordSaving] = useState(false);
+  const [facultyPasswordMessage, setFacultyPasswordMessage] = useState<{ error: boolean; text: string } | null>(null);
   
   // Below 75% tab state
   const [filterMode, setFilterMode] = useState<"below75" | "above75" | "all">("below75");
@@ -66,7 +95,7 @@ export function HodPortal() {
       setSubjects(subs);
       if (subs.length > 0) setSelSubject(subs[0]);
 
-      // Fetch students for all subjects with staggering to prevent Google Apps Script rate limiting
+      // Stagger requests to avoid overwhelming the attendance API.
       const studentFetches = await Promise.allSettled(
         subs.map(async (sub: any, idx: number) => {
           if (idx > 0) await new Promise((r) => setTimeout(r, idx * 150));
@@ -125,15 +154,234 @@ export function HodPortal() {
     if (tab === "history") loadHist(selSection);
   }, [tab, selSection, loadHist]);
 
-  const exportCsv = () => {
+  const loadRegisteredStudents = useCallback(async (section: string) => {
+    setStudentsLoading(true);
+    setStudentMessage(null);
+    try {
+      const response = await fetch(`/gs/hod/students?section=${encodeURIComponent(section)}`, {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      const json = await response.json();
+      if (!response.ok) throw new Error(json.error || "Could not load students.");
+      setRegisteredStudents(json.students || []);
+    } catch (e) {
+      setStudentMessage({ error: true, text: e instanceof Error ? e.message : "Could not load students." });
+    } finally {
+      setStudentsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tab === "students") loadRegisteredStudents(selSection);
+  }, [tab, selSection, loadRegisteredStudents]);
+
+  const registerStudent = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setStudentSaving(true);
+    setStudentMessage(null);
+    try {
+      const response = await fetch("/gs/hod/students", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          section: selSection,
+          usn: studentUsn.trim().toUpperCase(),
+          name: studentName.trim(),
+        }),
+      });
+      const json = await response.json();
+      if (!response.ok) throw new Error(json.error || "Could not register student.");
+      setStudentUsn("");
+      setStudentName("");
+      await loadRegisteredStudents(selSection);
+      setStudentMessage({ error: false, text: `${json.student.name} was registered in section ${selSection}.` });
+      setSections((current) => ({
+        ...current,
+        [selSection]: {
+          ...current[selSection],
+          available: true,
+          rows: (current[selSection]?.rows || 0) + 1,
+        },
+      }));
+    } catch (e) {
+      setStudentMessage({ error: true, text: e instanceof Error ? e.message : "Could not register student." });
+    } finally {
+      setStudentSaving(false);
+    }
+  };
+
+  const saveStudentEdit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!editingStudentUsn) return;
+    setStudentEditSaving(true);
+    setStudentMessage(null);
+    try {
+      const response = await fetch("/gs/hod/students", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          section: selSection,
+          usn: editingStudentUsn,
+          name: editingStudentName.trim(),
+        }),
+      });
+      const json = await response.json();
+      if (!response.ok) throw new Error(json.error || "Could not update student.");
+      setRegisteredStudents((current) =>
+        current.map((student) =>
+          student.usn === json.student.usn
+            ? { ...student, name: json.student.name }
+            : student
+        )
+      );
+      setEditingStudentUsn(null);
+      setStudentMessage({ error: false, text: `${json.student.usn} details were updated.` });
+    } catch (e) {
+      setStudentMessage({ error: true, text: e instanceof Error ? e.message : "Could not update student." });
+    } finally {
+      setStudentEditSaving(false);
+    }
+  };
+
+  const registerSubject = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSubjectSaving(true);
+    setSubjectMessage(null);
+    try {
+      const response = await fetch("/gs/hod/subjects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          section: selSection,
+          courseCode: subjectCourseCode.trim().toUpperCase(),
+          subject: subjectName.trim(),
+          teacher: subjectTeacher.trim(),
+          conducted: Number(subjectConducted),
+        }),
+      });
+      const json = await response.json();
+      if (!response.ok) throw new Error(json.error || "Could not register subject.");
+      setSubjectCourseCode("");
+      setSubjectName("");
+      setSubjectTeacher("");
+      setSubjectConducted("0");
+      await loadSectionData(selSection);
+      setSubjectMessage({
+        error: false,
+        text: `${json.subject.subject} (${json.subject.courseCode}) was registered for section ${selSection}.`,
+      });
+    } catch (e) {
+      setSubjectMessage({ error: true, text: e instanceof Error ? e.message : "Could not register subject." });
+    } finally {
+      setSubjectSaving(false);
+    }
+  };
+
+  const saveSubjectEdit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!editingSubjectCode) return;
+    setSubjectEditSaving(true);
+    setSubjectMessage(null);
+    try {
+      const response = await fetch("/gs/hod/subjects", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          section: selSection,
+          courseCode: editingSubjectCode,
+          subject: editingSubjectName.trim(),
+          teacher: editingSubjectTeacher.trim(),
+          conducted: Number(editingSubjectConducted),
+        }),
+      });
+      const json = await response.json();
+      if (!response.ok) throw new Error(json.error || "Could not update subject.");
+      setEditingSubjectCode(null);
+      await loadSectionData(selSection);
+      setSubjectMessage({ error: false, text: `${json.subject.courseCode} details were updated.` });
+    } catch (e) {
+      setSubjectMessage({ error: true, text: e instanceof Error ? e.message : "Could not update subject." });
+    } finally {
+      setSubjectEditSaving(false);
+    }
+  };
+
+  const assignFacultyPassword = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!passwordSubject) return;
+    if (facultyPassword !== facultyPasswordConfirm) {
+      setFacultyPasswordMessage({ error: true, text: "Passwords do not match." });
+      return;
+    }
+    setFacultyPasswordSaving(true);
+    setFacultyPasswordMessage(null);
+    try {
+      const response = await fetch("/gs/hod/faculty-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          section: selSection,
+          courseCode: passwordSubject.courseCode,
+          password: facultyPassword,
+        }),
+      });
+      const json = await response.json();
+      if (!response.ok) throw new Error(json.error || "Could not assign lecturer password.");
+      setFacultyPassword("");
+      setFacultyPasswordConfirm("");
+      setFacultyPasswordMessage({
+        error: false,
+        text: `Password assigned to ${passwordSubject.teacher} for ${passwordSubject.courseCode}. Share it with the lecturer using a secure channel.`,
+      });
+    } catch (e) {
+      setFacultyPasswordMessage({
+        error: true,
+        text: e instanceof Error ? e.message : "Could not assign lecturer password.",
+      });
+    } finally {
+      setFacultyPasswordSaving(false);
+    }
+  };
+
+  const exportExcel = async () => {
     const listToExport = allSubjectStudents.length > 0 ? allSubjectStudents : students;
     if (!listToExport.length) return;
-    const head = ["USN", "Name", "Course Code", "Subject", "Teacher", "Attended", "Conducted", "Percentage", "Status"];
-    const rows = listToExport.map((s) => [s.usn, s.name, s.courseCode, s.subjectName || selSubject?.subject, s.teacher || selSubject?.teacher, s.attended, s.conducted, s.percentage, s.status]);
-    const csv = [head, ...rows].map((r) => r.map((x) => `"${String(x ?? '').replace(/"/g, '""')}"`).join(",")).join("\n");
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-    const a = document.createElement("a"); a.href = url;
-    a.download = `HOD_${selSection}_attendance_report.csv`; a.click(); URL.revokeObjectURL(url);
+    try {
+      await downloadExcel(
+        `HOD_${selSection}_attendance_report.xlsx`,
+        "Attendance",
+        [
+          { header: "USN", width: 18 },
+          { header: "Name", width: 30 },
+          { header: "Course Code", width: 18 },
+          { header: "Subject", width: 36 },
+          { header: "Teacher", width: 28 },
+          { header: "Attended", width: 14, alignment: "right" },
+          { header: "Conducted", width: 14, alignment: "right" },
+          { header: "Percentage", width: 15, alignment: "right" },
+          { header: "Status", width: 18 },
+        ],
+        listToExport.map((student) => [
+          student.usn,
+          student.name,
+          student.courseCode,
+          student.subjectName || selSubject?.subject,
+          student.teacher || selSubject?.teacher,
+          student.attended,
+          student.conducted,
+          typeof student.percentage === "number" ? `${student.percentage}%` : "",
+          student.status?.replace("_", " "),
+        ])
+      );
+    } catch {
+      setError("Could not generate the Excel report. Please try again.");
+    }
   };
 
   const isStudentStarted = (s: any) => (s.conducted > 0) || typeof s.percentage === "number";
@@ -162,7 +410,7 @@ export function HodPortal() {
     : 0;
 
   return (
-    <PortalShell role="HOD" title="Department Overview" subtitle="Read-only • Live Google Sheets API Integration" nav={NAV} active={tab} onSelect={setTab} onLogout={logout}>
+    <PortalShell role="HOD" title="Department Overview" subtitle="Roster and attendance management • Live Supabase Integration" nav={NAV} active={tab} onSelect={setTab} onLogout={logout}>
       {error && <GlassCard className="mb-4 text-sm text-rose-600">{error}</GlassCard>}
       {loading ? (
         <GlassCard className="flex items-center gap-2 text-sm text-slate-600"><Loader2 className="h-4 w-4 animate-spin" />Loading HOD Portal…</GlassCard>
@@ -178,7 +426,7 @@ export function HodPortal() {
                   </div>
                   <p className="mt-1 text-xs text-slate-500">
                     {sections[s]?.available
-                      ? `${Math.max(0, (sections[s].rows || 5) - 4)} students · ${(sections[s].columns || 4) - 3} subjects`
+                      ? `${sections[s].rows || 0} students · ${Math.max(0, (sections[s].columns || 3) - 3)} subjects`
                       : "Click to view section"}
                   </p>
                 </GlassCard>
@@ -186,7 +434,139 @@ export function HodPortal() {
             ))}
           </div>
           <GlassCard className="text-sm text-slate-600">
-            HOD access is <b>Read-Only</b>. Select any section to view subjects, student lists, attendance history, below 75% alerts, and analytics.
+            Select a section to view attendance data or register students for your department.
+          </GlassCard>
+        </div>
+      ) : tab === "students" ? (
+        <div className="space-y-4">
+          <GlassCard>
+            <p className="mb-2 text-xs font-bold uppercase text-slate-500">Section</p>
+            <div className="flex flex-wrap gap-2">
+              {SECTIONS_LIST.map((section) => (
+                <button
+                  key={section}
+                  type="button"
+                  onClick={() => setSelSection(section)}
+                  className={cn(
+                    "rounded-xl border px-4 py-2 text-sm font-bold transition",
+                    selSection === section
+                      ? "border-emerald-600 bg-emerald-600 text-white"
+                      : "border-white/60 bg-white/50 dark:bg-white/5"
+                  )}
+                >
+                  {section}
+                </button>
+              ))}
+            </div>
+          </GlassCard>
+
+          <GlassCard>
+            <h2 className="text-base font-bold">Register a student</h2>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+              Add the student&apos;s name and GMIT USN to section {selSection}.
+            </p>
+            <form onSubmit={registerStudent} className="mt-4 grid gap-3 sm:grid-cols-2">
+              <label className="text-xs font-bold uppercase text-slate-500">
+                Student name
+                <input
+                  required
+                  maxLength={120}
+                  value={studentName}
+                  onChange={(event) => setStudentName(event.target.value)}
+                  className="mt-1.5 h-11 w-full rounded-xl border border-white/60 bg-white/70 px-3 text-sm font-medium normal-case text-slate-900 outline-none focus:border-emerald-600 dark:bg-white/5 dark:text-slate-100"
+                  placeholder="Full name"
+                />
+              </label>
+              <label className="text-xs font-bold uppercase text-slate-500">
+                USN
+                <input
+                  required
+                  maxLength={10}
+                  value={studentUsn}
+                  onChange={(event) => setStudentUsn(event.target.value.toUpperCase())}
+                  className="mt-1.5 h-11 w-full rounded-xl border border-white/60 bg-white/70 px-3 font-mono text-sm font-semibold uppercase text-slate-900 outline-none focus:border-emerald-600 dark:bg-white/5 dark:text-slate-100"
+                  placeholder="4GM24CS001"
+                />
+              </label>
+              <div className="sm:col-span-2">
+                <button
+                  type="submit"
+                  disabled={studentSaving}
+                  className="flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {studentSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
+                  {studentSaving ? "Registering…" : "Register student"}
+                </button>
+              </div>
+            </form>
+            {studentMessage && (
+              <p className={cn("mt-3 text-sm", studentMessage.error ? "text-rose-600" : "text-emerald-700")}>
+                {studentMessage.text}
+              </p>
+            )}
+          </GlassCard>
+
+          <GlassCard className="overflow-x-auto p-0">
+            <div className="border-b border-white/40 p-4">
+              <h2 className="text-sm font-bold">Registered students · {selSection}</h2>
+              <p className="mt-1 text-xs text-slate-500">{registeredStudents.length} students</p>
+            </div>
+            {studentsLoading ? (
+              <div className="flex items-center gap-2 p-5 text-sm text-slate-600">
+                <Loader2 className="h-4 w-4 animate-spin" />Loading students…
+              </div>
+            ) : registeredStudents.length === 0 ? (
+              <p className="p-5 text-sm text-slate-600">No students registered in this section yet.</p>
+            ) : (
+              <table className="w-full min-w-[420px] text-sm">
+                <thead className="border-b border-white/40 text-left text-xs uppercase text-slate-500">
+                  <tr><th className="p-3">#</th><th className="p-3">USN</th><th className="p-3">Name</th><th className="p-3">Actions</th></tr>
+                </thead>
+                <tbody>
+                  {registeredStudents.map((student, index) => (
+                    <tr key={student.usn} className="border-b border-white/20">
+                      <td className="p-3 text-slate-500">{student.serial || index + 1}</td>
+                      <td className="p-3 font-mono font-semibold">{student.usn}</td>
+                      <td className="p-3">
+                        {editingStudentUsn === student.usn ? (
+                          <form onSubmit={saveStudentEdit} className="flex min-w-48 items-center gap-2">
+                            <input
+                              required
+                              maxLength={120}
+                              autoFocus
+                              value={editingStudentName}
+                              onChange={(event) => setEditingStudentName(event.target.value)}
+                              className="h-9 min-w-0 flex-1 rounded-lg border border-white/60 bg-white/70 px-2 text-sm text-slate-900 dark:bg-white/5 dark:text-slate-100"
+                            />
+                            <button type="submit" disabled={studentEditSaving} aria-label="Save student details" className="rounded-lg p-2 text-emerald-700 hover:bg-emerald-500/10 disabled:opacity-50">
+                              {studentEditSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                            </button>
+                            <button type="button" onClick={() => setEditingStudentUsn(null)} aria-label="Cancel student edit" className="rounded-lg p-2 text-slate-500 hover:bg-slate-500/10">
+                              <X className="h-4 w-4" />
+                            </button>
+                          </form>
+                        ) : student.name}
+                      </td>
+                      <td className="p-3">
+                        {editingStudentUsn !== student.usn && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingStudentUsn(student.usn);
+                              setEditingStudentName(student.name);
+                            }}
+                            aria-label={`Edit ${student.usn}`}
+                            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-500/10"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />Edit
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </GlassCard>
         </div>
       ) : tab === "sections" ? (
@@ -220,7 +600,7 @@ export function HodPortal() {
             <>
               <div className="flex items-center justify-between">
                 <p className="text-sm font-bold">{selSubject.subject} • {selSubject.teacher} • {selSubject.conducted} conducted</p>
-                <button onClick={exportCsv} data-testid="hod-export" className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-bold text-white transition hover:bg-emerald-700"><Download className="h-4 w-4" />Export CSV</button>
+                <button onClick={exportExcel} data-testid="hod-export" className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-bold text-white transition hover:bg-emerald-700"><Download className="h-4 w-4" />Export Excel</button>
               </div>
               <GlassCard className="overflow-x-auto p-0">
                 <table className="w-full min-w-[560px] text-sm">
@@ -244,6 +624,253 @@ export function HodPortal() {
         </div>
       ) : tab === "subjects" ? (
         <div className="space-y-4">
+          <GlassCard>
+            <h2 className="text-base font-bold">Register a subject</h2>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+              Add a subject and its lecturer to section {selSection} before taking attendance.
+            </p>
+            <form onSubmit={registerSubject} className="mt-4 grid gap-3 sm:grid-cols-2">
+              <label className="text-xs font-bold uppercase text-slate-500">
+                Course code
+                <input
+                  required
+                  maxLength={20}
+                  value={subjectCourseCode}
+                  onChange={(event) => setSubjectCourseCode(event.target.value.toUpperCase())}
+                  className="mt-1.5 h-11 w-full rounded-xl border border-white/60 bg-white/70 px-3 font-mono text-sm font-semibold uppercase text-slate-900 outline-none focus:border-emerald-600 dark:bg-white/5 dark:text-slate-100"
+                  placeholder="21CS51"
+                />
+              </label>
+              <label className="text-xs font-bold uppercase text-slate-500">
+                Subject name
+                <input
+                  required
+                  maxLength={120}
+                  value={subjectName}
+                  onChange={(event) => setSubjectName(event.target.value)}
+                  className="mt-1.5 h-11 w-full rounded-xl border border-white/60 bg-white/70 px-3 text-sm font-medium normal-case text-slate-900 outline-none focus:border-emerald-600 dark:bg-white/5 dark:text-slate-100"
+                  placeholder="Subject name"
+                />
+              </label>
+              <label className="text-xs font-bold uppercase text-slate-500">
+                Lecturer name
+                <input
+                  required
+                  maxLength={120}
+                  value={subjectTeacher}
+                  onChange={(event) => setSubjectTeacher(event.target.value)}
+                  className="mt-1.5 h-11 w-full rounded-xl border border-white/60 bg-white/70 px-3 text-sm font-medium normal-case text-slate-900 outline-none focus:border-emerald-600 dark:bg-white/5 dark:text-slate-100"
+                  placeholder="Lecturer name"
+                />
+              </label>
+              <label className="text-xs font-bold uppercase text-slate-500">
+                Classes already conducted
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  required
+                  value={subjectConducted}
+                  onChange={(event) => setSubjectConducted(event.target.value)}
+                  className="mt-1.5 h-11 w-full rounded-xl border border-white/60 bg-white/70 px-3 text-sm font-medium text-slate-900 outline-none focus:border-emerald-600 dark:bg-white/5 dark:text-slate-100"
+                />
+              </label>
+              <div className="sm:col-span-2">
+                <button
+                  type="submit"
+                  disabled={subjectSaving}
+                  className="flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {subjectSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <BookOpen className="h-4 w-4" />}
+                  {subjectSaving ? "Registering…" : "Register subject"}
+                </button>
+              </div>
+            </form>
+            {subjectMessage && (
+              <p className={cn("mt-3 text-sm", subjectMessage.error ? "text-rose-600" : "text-emerald-700")}>
+                {subjectMessage.text}
+              </p>
+            )}
+          </GlassCard>
+
+          {subjects.length > 0 && (
+            <GlassCard className="overflow-x-auto p-0">
+              <div className="border-b border-white/40 p-4">
+                <h2 className="text-sm font-bold">Registered subjects · {selSection}</h2>
+                <p className="mt-1 text-xs text-slate-500">
+                  Course codes stay fixed because attendance records reference them.
+                </p>
+              </div>
+              <table className="w-full min-w-[680px] text-sm">
+                <thead className="border-b border-white/40 text-left text-xs uppercase text-slate-500">
+                  <tr><th className="p-3">Course code</th><th className="p-3">Subject</th><th className="p-3">Lecturer</th><th className="p-3">Conducted</th><th className="p-3">Actions</th></tr>
+                </thead>
+                <tbody>
+                  {subjects.map((subject) => (
+                    <tr key={subject.courseCode} className="border-b border-white/20">
+                      <td className="p-3 font-mono font-semibold">{subject.courseCode}</td>
+                      {editingSubjectCode === subject.courseCode ? (
+                        <>
+                          <td className="p-3">
+                            <input required maxLength={120} value={editingSubjectName} onChange={(event) => setEditingSubjectName(event.target.value)} className="h-9 w-full rounded-lg border border-white/60 bg-white/70 px-2 text-sm text-slate-900 dark:bg-white/5 dark:text-slate-100" />
+                          </td>
+                          <td className="p-3">
+                            <input required maxLength={120} value={editingSubjectTeacher} onChange={(event) => setEditingSubjectTeacher(event.target.value)} className="h-9 w-full rounded-lg border border-white/60 bg-white/70 px-2 text-sm text-slate-900 dark:bg-white/5 dark:text-slate-100" />
+                          </td>
+                          <td className="p-3">
+                            <input type="number" min={0} step={1} required value={editingSubjectConducted} onChange={(event) => setEditingSubjectConducted(event.target.value)} className="h-9 w-24 rounded-lg border border-white/60 bg-white/70 px-2 text-sm text-slate-900 dark:bg-white/5 dark:text-slate-100" />
+                          </td>
+                          <td className="p-3">
+                            <form onSubmit={saveSubjectEdit} className="flex items-center gap-1">
+                              <button type="submit" disabled={subjectEditSaving} aria-label="Save subject details" className="rounded-lg p-2 text-emerald-700 hover:bg-emerald-500/10 disabled:opacity-50">
+                                {subjectEditSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                              </button>
+                              <button type="button" onClick={() => setEditingSubjectCode(null)} aria-label="Cancel subject edit" className="rounded-lg p-2 text-slate-500 hover:bg-slate-500/10">
+                                <X className="h-4 w-4" />
+                              </button>
+                            </form>
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="p-3">{subject.subject}</td>
+                          <td className="p-3">{subject.teacher}</td>
+                          <td className="p-3">{subject.conducted}</td>
+                          <td className="p-3">
+                            <div className="flex flex-col items-start gap-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingSubjectCode(subject.courseCode);
+                                  setEditingSubjectName(subject.subject);
+                                  setEditingSubjectTeacher(subject.teacher);
+                                  setEditingSubjectConducted(String(subject.conducted));
+                                }}
+                                aria-label={`Edit ${subject.courseCode}`}
+                                className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-500/10"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />Edit details
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPasswordSubject(subject);
+                                  setFacultyPassword("");
+                                  setFacultyPasswordConfirm("");
+                                  setFacultyPasswordMessage(null);
+                                }}
+                                aria-label={`Assign lecturer password for ${subject.courseCode}`}
+                                className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-500/10"
+                              >
+                                <KeyRound className="h-3.5 w-3.5" />Set/reset password
+                              </button>
+                            </div>
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </GlassCard>
+          )}
+
+          {passwordSubject && (
+            <GlassCard>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-bold">
+                    Set lecturer password · {passwordSubject.courseCode}
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                    {passwordSubject.teacher} · Section {selSection}. Passwords are stored as one-way hashes and cannot be viewed later.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPasswordSubject(null);
+                    setFacultyPassword("");
+                    setFacultyPasswordConfirm("");
+                    setFacultyPasswordMessage(null);
+                  }}
+                  aria-label="Close lecturer password form"
+                  className="rounded-lg p-2 text-slate-500 hover:bg-slate-500/10"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <form onSubmit={assignFacultyPassword} className="mt-4 grid gap-3 sm:grid-cols-2">
+                <label className="text-xs font-bold uppercase text-slate-500">
+                  New password
+                  <div className="relative mt-1.5">
+                    <input
+                      required
+                      type={showFacultyPassword ? "text" : "password"}
+                      minLength={12}
+                      maxLength={72}
+                      autoComplete="new-password"
+                      value={facultyPassword}
+                      onChange={(event) => setFacultyPassword(event.target.value)}
+                      className="h-11 w-full rounded-xl border border-white/60 bg-white/70 px-3 pr-12 text-sm font-medium normal-case text-slate-900 outline-none focus:border-emerald-600 dark:bg-white/5 dark:text-slate-100"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowFacultyPassword((visible) => !visible)}
+                      aria-label={showFacultyPassword ? "Hide new password" : "Show new password"}
+                      aria-pressed={showFacultyPassword}
+                      className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-xl text-slate-500 hover:text-emerald-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-600"
+                    >
+                      {showFacultyPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </label>
+                <label className="text-xs font-bold uppercase text-slate-500">
+                  Confirm password
+                  <div className="relative mt-1.5">
+                    <input
+                      required
+                      type={showFacultyPasswordConfirm ? "text" : "password"}
+                      minLength={12}
+                      maxLength={72}
+                      autoComplete="new-password"
+                      value={facultyPasswordConfirm}
+                      onChange={(event) => setFacultyPasswordConfirm(event.target.value)}
+                      className="h-11 w-full rounded-xl border border-white/60 bg-white/70 px-3 pr-12 text-sm font-medium normal-case text-slate-900 outline-none focus:border-emerald-600 dark:bg-white/5 dark:text-slate-100"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowFacultyPasswordConfirm((visible) => !visible)}
+                      aria-label={showFacultyPasswordConfirm ? "Hide password confirmation" : "Show password confirmation"}
+                      aria-pressed={showFacultyPasswordConfirm}
+                      className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-xl text-slate-500 hover:text-emerald-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-600"
+                    >
+                      {showFacultyPasswordConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </label>
+                <div className="sm:col-span-2">
+                  <p className="text-xs text-slate-500">
+                    Use 12–72 characters with uppercase, lowercase, a number, and a symbol. Use a unique password for each subject.
+                  </p>
+                  <button
+                    type="submit"
+                    disabled={facultyPasswordSaving}
+                    className="mt-3 flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {facultyPasswordSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
+                    {facultyPasswordSaving ? "Saving password…" : "Assign password"}
+                  </button>
+                </div>
+              </form>
+              {facultyPasswordMessage && (
+                <p className={cn("mt-3 text-sm", facultyPasswordMessage.error ? "text-rose-600" : "text-emerald-700")}>
+                  {facultyPasswordMessage.text}
+                </p>
+              )}
+            </GlassCard>
+          )}
+
           <GlassCard>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -278,7 +905,7 @@ export function HodPortal() {
             <GlassCard className="overflow-x-auto p-0">
               <div className="p-4 border-b border-white/40 flex items-center justify-between">
                 <p className="text-sm font-bold">Section {selSection} • All Subjects ({sectionStudents.length} records)</p>
-                <button onClick={exportCsv} className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white"><Download className="h-3.5 w-3.5" />Export CSV</button>
+                <button onClick={exportExcel} className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white"><Download className="h-3.5 w-3.5" />Export Excel</button>
               </div>
               <table className="w-full min-w-[780px] text-sm">
                 <thead className="border-b border-white/40 text-left text-xs uppercase text-slate-500">
@@ -466,15 +1093,15 @@ export function HodPortal() {
         <div className="space-y-4">
           <GlassCard className="p-6">
             <h3 className="mb-2 text-lg font-bold">Export Section Attendance Report</h3>
-            <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">Download complete student attendance records as CSV for Section {selSection}.</p>
+            <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">Download complete student attendance records as a formatted Excel workbook for Section {selSection}.</p>
             <div className="flex flex-wrap items-center gap-3">
               <div className="flex gap-2">
                 {SECTIONS_LIST.map((s) => (
                   <button key={s} onClick={() => setSelSection(s)} className={cn("rounded-xl border px-3 py-1.5 text-sm font-bold transition", selSection === s ? "border-emerald-600 bg-emerald-600 text-white" : "border-white/60 bg-white/50 dark:bg-white/5")}>{s}</button>
                 ))}
               </div>
-              <button onClick={exportCsv} className="ml-auto flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 font-bold text-white transition hover:bg-emerald-700">
-                <Download className="h-4 w-4" /> Export CSV ({allSubjectStudents.length} records)
+              <button onClick={exportExcel} className="ml-auto flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 font-bold text-white transition hover:bg-emerald-700">
+                <Download className="h-4 w-4" /> Export Excel ({allSubjectStudents.length} records)
               </button>
             </div>
           </GlassCard>
@@ -483,4 +1110,3 @@ export function HodPortal() {
     </PortalShell>
   );
 }
-

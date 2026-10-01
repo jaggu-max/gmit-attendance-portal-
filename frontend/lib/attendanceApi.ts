@@ -1,24 +1,26 @@
 import "server-only";
 
-const BASE = process.env.GOOGLE_ATTENDANCE_API_URL;
+const SUPABASE_URL = process.env.SUPABASE_URL?.replace(/\/+$/, "");
+const SUPABASE_KEY =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE;
 const TIMEOUT = 25000;
 
 export class ApiUnavailableError extends Error {}
 export class ApiNotDeployedError extends Error {
   constructor() {
-    super("The attendance API does not yet support this action. Please deploy the upgraded Apps Script.");
+    super("The attendance database function is not deployed yet. Apply the Supabase migration.");
   }
 }
 
 export const READ_ACTIONS = [
-  "health", "sections", "student", "subjects", "authorizesubject",
+  "health", "sections", "student", "subjects",
   "facultysubjects", "students", "attendance", "history",
 ];
 
 export const WRITE_ACTIONS = ["submitAttendance", "updateAttendance", "undoAttendance", "deleteAttendance"];
 
 function isMock(): boolean {
-  return !BASE || BASE === "mock" || BASE === "demo";
+  return SUPABASE_URL === "mock" || SUPABASE_URL === "demo";
 }
 
 function getMockResponse(action: string, params: Record<string, string | undefined>): any {
@@ -112,6 +114,60 @@ function ctrl() {
   return { signal: c.signal, done: () => clearTimeout(t) };
 }
 
+async function callDatabase(
+  action: string,
+  params: Record<string, unknown>,
+  retries: number
+): Promise<any> {
+  if (!SUPABASE_URL || !SUPABASE_KEY) {
+    throw new ApiUnavailableError("Supabase is not configured.");
+  }
+
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    const { signal, done } = ctrl();
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/gmit_attendance_api`, {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ p_action: action, p_params: params }),
+        cache: "no-store",
+        signal,
+      });
+      const text = await res.text();
+      done();
+      if (res.status === 404 || res.status === 400 && /function/i.test(text)) {
+        throw new ApiNotDeployedError();
+      }
+      let json: any;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        throw new ApiUnavailableError("Supabase returned an invalid response.");
+      }
+      if (!res.ok) {
+        throw new ApiUnavailableError(json.message || json.error || `Supabase request failed (${res.status}).`);
+      }
+      if (json && typeof json === "object" && !Array.isArray(json) && json.updatedAt === undefined) {
+        json.updatedAt = new Date().toISOString();
+      }
+      return json;
+    } catch (err) {
+      done();
+      if (err instanceof ApiNotDeployedError) throw err;
+      lastErr = err;
+      if (attempt < retries) await new Promise((resolve) => setTimeout(resolve, attempt * 500));
+    }
+  }
+  throw new ApiUnavailableError(
+    lastErr instanceof Error ? lastErr.message : "Supabase request failed."
+  );
+}
+
 export async function apiGet(
   action: string,
   params: Record<string, string | undefined> = {}
@@ -119,42 +175,10 @@ export async function apiGet(
   if (isMock()) {
     return getMockResponse(action, params);
   }
-  const qs = new URLSearchParams({ action });
-  Object.entries(params).forEach(([k, v]) => {
-    if (v !== undefined && v !== null && v !== "") qs.set(k, String(v));
-  });
-
-  const maxRetries = 3;
-  let lastErr: any = null;
-
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    const { signal, done } = ctrl();
-    try {
-      const res = await fetch(`${BASE}?${qs.toString()}`, { cache: "no-store", redirect: "follow", signal });
-      done();
-      if (!res.ok && res.status >= 500 && attempt < maxRetries) {
-        await new Promise((r) => setTimeout(r, attempt * 500));
-        continue;
-      }
-      const text = await res.text();
-      if (text.trim().startsWith("<")) throw new ApiNotDeployedError();
-      let json: any;
-      try { json = JSON.parse(text); } catch { throw new ApiUnavailableError("parse"); }
-      if (json && json.success === false && /unknown action/i.test(json.error || "")) {
-        throw new ApiNotDeployedError();
-      }
-      return json;
-    } catch (err: any) {
-      done();
-      if (err instanceof ApiNotDeployedError) throw err;
-      lastErr = err;
-      if (attempt < maxRetries) {
-        await new Promise((r) => setTimeout(r, attempt * 500));
-      }
-    }
-  }
-
-  throw new ApiUnavailableError(lastErr?.message || "network");
+  const filtered = Object.fromEntries(
+    Object.entries(params).filter(([, value]) => value !== undefined && value !== "")
+  );
+  return callDatabase(action, filtered, 3);
 }
 
 export async function apiPost(payload: Record<string, unknown>): Promise<any> {
@@ -162,42 +186,6 @@ export async function apiPost(payload: Record<string, unknown>): Promise<any> {
     return postMockResponse(payload);
   }
   
-  const maxRetries = 3;
-  let lastErr: any = null;
-
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    const { signal, done } = ctrl();
-    try {
-      const res = await fetch(BASE!, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-        cache: "no-store",
-        redirect: "follow",
-        signal,
-      });
-      done();
-      if (!res.ok && res.status >= 500 && attempt < maxRetries) {
-        await new Promise((r) => setTimeout(r, attempt * 500));
-        continue;
-      }
-      const text = await res.text();
-      if (text.trim().startsWith("<")) throw new ApiNotDeployedError();
-      let json: any;
-      try { json = JSON.parse(text); } catch { throw new ApiNotDeployedError(); }
-      if (json && json.success === false && /unknown (post )?action/i.test(json.error || "")) {
-        throw new ApiNotDeployedError();
-      }
-      return json;
-    } catch (err: any) {
-      done();
-      if (err instanceof ApiNotDeployedError) throw err;
-      lastErr = err;
-      if (attempt < maxRetries) {
-        await new Promise((r) => setTimeout(r, attempt * 500));
-      }
-    }
-  }
-
-  throw new ApiUnavailableError(lastErr?.message || "network");
+  const action = String(payload.action || "");
+  return callDatabase(action, payload, 1);
 }

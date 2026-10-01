@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useAttendance } from "@/components/attendance-provider";
-import { AvatarUploader } from "@/components/avatar-uploader";
+import { ProfileAvatar } from "@/components/profile-avatar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { StatusBadge } from "@/components/status-badge";
 import { ListSkeleton } from "@/components/skeletons";
@@ -35,7 +35,7 @@ export default function ProfilePage() {
       <section className="relative overflow-hidden rounded-lg border border-border bg-surface p-7">
         <div className="ambient-glow pointer-events-none absolute inset-x-0 top-0 h-32 opacity-60" />
         <div className="relative flex flex-col items-center text-center">
-          <AvatarUploader name={student.name} />
+          <ProfileAvatar name={student.name} size={112} className="ring-2" />
           <h1 className="mt-5 text-xl font-bold tracking-tight text-ink">
             {student.name}
           </h1>

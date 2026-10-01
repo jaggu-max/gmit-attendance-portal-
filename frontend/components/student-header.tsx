@@ -1,17 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useProfile } from "./profile-provider";
 import { ProfileAvatar } from "./profile-avatar";
 import { ThemeToggle } from "./theme-toggle";
 import type { StudentIdentity } from "@/lib/types";
 
 export function StudentHeader({ student }: { student: StudentIdentity }) {
-  const { photo } = useProfile();
   return (
     <header className="flex items-center justify-between" data-testid="student-header">
       <Link href="/profile" className="flex items-center gap-3 group">
-        <ProfileAvatar photo={photo} name={student.name} size={48} />
+        <ProfileAvatar name={student.name} size={48} />
         <div className="leading-tight">
           <p className="text-[15px] font-semibold text-ink group-hover:text-royal transition-colors">
             {student.name}

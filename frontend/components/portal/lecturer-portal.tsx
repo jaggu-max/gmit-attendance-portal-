@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { PortalShell, GlassCard, type NavItem } from "./portal-shell";
 import { readApi, writeApi, friendly, todayISO, prettyDate } from "@/lib/clientApi";
+import { downloadExcel } from "@/lib/exportExcel";
 import { cn } from "@/lib/utils";
 import type { FacultySession } from "@/lib/roles-auth";
 
@@ -114,18 +115,13 @@ export function LecturerPortal({ faculty }: { faculty: FacultySession }) {
         payload.logId = editLogId;
       }
       const j = await writeApi(payload);
-      flash(editing ? "Attendance updated on the Google Sheet." : `Submitted • ${j.present || present} present, ${j.absent || absent} absent.`);
+      flash(editing ? "Attendance updated." : `Submitted • ${j.present || present} present, ${j.absent || absent} absent.`);
       setEditing(false);
       setEditLogId(null);
       await Promise.all([loadStudents(), loadHistory()]);
       setTab("history");
     } catch (e: any) {
-      const msg = friendly(e);
-      if (!editing && /already submitted/i.test(msg)) {
-        flash("Google Apps Script needs a NEW deployment version: Open Google Sheet -> Extensions -> Apps Script -> Deploy -> Manage Deployments -> Edit -> New Version -> Deploy.");
-      } else {
-        flash(msg);
-      }
+      flash(friendly(e));
     } finally { setBusy(false); }
   };
 
@@ -163,7 +159,7 @@ export function LecturerPortal({ faculty }: { faculty: FacultySession }) {
   };
 
   const undo = async (h: any) => {
-    if (!confirm(`Undo attendance for ${faculty.subject} • ${faculty.section} • ${prettyDate(h.date)}? This restores the previous state on the Google Sheet.`)) return;
+    if (!confirm(`Undo attendance for ${faculty.subject} • ${faculty.section} • ${prettyDate(h.date)}? This reverses its attendance totals.`)) return;
     setBusy(true);
     try {
       await writeApi({
@@ -173,13 +169,13 @@ export function LecturerPortal({ faculty }: { faculty: FacultySession }) {
         date: h.date,
         logId: h.logId,
       });
-      flash("Attendance undone — Sheet restored.");
+      flash("Attendance undone.");
       await Promise.all([loadStudents(), loadHistory()]);
     } catch (e) { flash(friendly(e)); } finally { setBusy(false); }
   };
 
   const del = async (h: any) => {
-    if (!confirm(`Delete attendance record for ${faculty.subject} • ${faculty.section} • ${prettyDate(h.date)}? This will remove the record and reverse attendance totals on the Google Sheet.`)) return;
+    if (!confirm(`Delete attendance record for ${faculty.subject} • ${faculty.section} • ${prettyDate(h.date)}? This reverses its attendance totals.`)) return;
     setBusy(true);
     try {
       await writeApi({
@@ -194,14 +190,32 @@ export function LecturerPortal({ faculty }: { faculty: FacultySession }) {
     } catch (e) { flash(friendly(e)); } finally { setBusy(false); }
   };
 
-  const exportCsv = () => {
+  const exportExcel = async () => {
     if (!students.length) return;
-    const head = ["USN", "Name", "Attended", "Conducted", "Percentage", "Status"];
-    const rows = students.map((s) => [s.usn, s.name, s.attended, s.conducted, s.percentage, s.status]);
-    const csv = [head, ...rows].map((r) => r.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(",")).join("\n");
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-    const a = document.createElement("a"); a.href = url;
-    a.download = `${faculty.section}_${faculty.courseCode}_attendance.csv`; a.click(); URL.revokeObjectURL(url);
+    try {
+      await downloadExcel(
+        `${faculty.section}_${faculty.courseCode}_attendance.xlsx`,
+        "Attendance",
+        [
+          { header: "USN", width: 18 },
+          { header: "Name", width: 32 },
+          { header: "Attended", width: 14, alignment: "right" },
+          { header: "Conducted", width: 14, alignment: "right" },
+          { header: "Percentage", width: 15, alignment: "right" },
+          { header: "Status", width: 18 },
+        ],
+        students.map((student) => [
+          student.usn,
+          student.name,
+          student.attended,
+          student.conducted,
+          `${getPct(student)}%`,
+          student.status?.replace("_", " "),
+        ])
+      );
+    } catch {
+      flash("Could not generate the Excel report. Please try again.");
+    }
   };
 
   const isStarted = (s: any) => (s.conducted > 0) || typeof s.percentage === "number";
@@ -505,9 +519,9 @@ export function LecturerPortal({ faculty }: { faculty: FacultySession }) {
         /* Export tab */
         <GlassCard className="p-6">
           <h3 className="mb-2 text-lg font-bold">Export Attendance Data</h3>
-          <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">Download section {faculty.section} • {faculty.courseCode} attendance data as CSV.</p>
-          <button onClick={exportCsv} className="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 font-bold text-white transition hover:bg-indigo-700">
-            <Download className="h-4 w-4" /> Download CSV ({students.length} students)
+          <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">Download section {faculty.section} • {faculty.courseCode} attendance data as a formatted Excel workbook.</p>
+          <button onClick={exportExcel} className="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 font-bold text-white transition hover:bg-indigo-700">
+            <Download className="h-4 w-4" /> Download Excel ({students.length} students)
           </button>
         </GlassCard>
       )}
@@ -524,4 +538,3 @@ function Stat({ label, value, tone, icon }: { label: string; value: string | num
     </GlassCard>
   );
 }
-

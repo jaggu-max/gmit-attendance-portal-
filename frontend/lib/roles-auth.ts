@@ -4,6 +4,7 @@ import crypto from "crypto";
 
 const SECRET = process.env.SESSION_SECRET ?? "";
 const MAX_AGE = 60 * 60 * 12;
+const FACULTY_COOKIE = "gmit_faculty_v2";
 
 export interface FacultySession {
   section: string;
@@ -37,13 +38,13 @@ const opts = { httpOnly: true, secure: true, sameSite: "lax" as const, path: "/"
 
 /* Faculty */
 export async function setFaculty(data: FacultySession) {
-  (await cookies()).set("gmit_faculty", token(data), opts);
+  (await cookies()).set(FACULTY_COOKIE, token(data), opts);
 }
 export async function getFaculty(): Promise<FacultySession | null> {
-  return verify<FacultySession>((await cookies()).get("gmit_faculty")?.value);
+  return verify<FacultySession>((await cookies()).get(FACULTY_COOKIE)?.value);
 }
 export async function clearFaculty() {
-  (await cookies()).set("gmit_faculty", "", { ...opts, maxAge: 0 });
+  (await cookies()).set(FACULTY_COOKIE, "", { ...opts, maxAge: 0 });
 }
 
 /* HOD */
