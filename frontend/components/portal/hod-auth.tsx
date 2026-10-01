@@ -29,7 +29,7 @@ export function HodAuth() {
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-600 text-white"><Building2 className="h-6 w-6" /></div>
           <div>
             <h1 className="text-xl font-extrabold">HOD / Admin Portal</h1>
-            <p className="text-sm text-slate-600 dark:text-slate-300">View-only department overview</p>
+            <p className="text-sm text-slate-600 dark:text-slate-300">Department overview and student registration</p>
           </div>
         </div>
         <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">Passcode</label>

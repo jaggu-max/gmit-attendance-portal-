@@ -1,8 +1,8 @@
 import "server-only";
 import type { AttendanceData, RawSubject, Subject } from "./types";
 import { deriveStatus, MIN_REQUIRED } from "./status";
+import { apiGet, ApiUnavailableError } from "./attendanceApi";
 
-const API_URL = process.env.GOOGLE_ATTENDANCE_API_URL;
 const TTL = Number(process.env.ATTENDANCE_CACHE_TTL_MS ?? 60000);
 
 interface CacheEntry {
@@ -82,7 +82,7 @@ async function fetchFromSource(
   section: string,
   usn: string
 ): Promise<AttendanceData> {
-  if (!API_URL || API_URL === "mock" || API_URL === "demo") {
+  if (process.env.SUPABASE_URL === "mock" || process.env.SUPABASE_URL === "demo") {
     const normSec = section.trim().toUpperCase();
     const normUsn = usn.trim().toUpperCase();
     return {
@@ -97,29 +97,20 @@ async function fetchFromSource(
       fetchedAt: new Date().toISOString()
     };
   }
-  const url = `${API_URL}?action=student&section=${encodeURIComponent(
-    section
-  )}&usn=${encodeURIComponent(usn)}`;
-
-  let res: Response;
   try {
-    res = await fetch(url, { cache: "no-store", redirect: "follow" });
-  } catch {
-    throw new AttendanceUnavailableError("network");
-  }
-  if (!res.ok) throw new AttendanceUnavailableError(`status ${res.status}`);
+    const json = (await apiGet("student", { section, usn })) as RawResponse;
 
-  let json: RawResponse;
-  try {
-    json = (await res.json()) as RawResponse;
-  } catch {
-    throw new AttendanceUnavailableError("parse");
+    if (!json.success) {
+      throw new StudentNotFoundError(json.error ?? "not found");
+    }
+    return normalize(json);
+  } catch (err) {
+    if (err instanceof StudentNotFoundError) throw err;
+    if (err instanceof ApiUnavailableError) {
+      throw new AttendanceUnavailableError(err.message);
+    }
+    throw new AttendanceUnavailableError("Unable to load attendance.");
   }
-
-  if (!json.success) {
-    throw new StudentNotFoundError(json.error ?? "not found");
-  }
-  return normalize(json);
 }
 
 /**

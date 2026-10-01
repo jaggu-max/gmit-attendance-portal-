@@ -7,7 +7,6 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import type { SessionData } from "@/lib/types";
 import { AttendanceProvider } from "./attendance-provider";
-import { ProfileProvider } from "./profile-provider";
 import { Logo } from "./logo";
 
 const NAV = [
@@ -32,9 +31,8 @@ export function AppFrame({
   const pathname = usePathname();
 
   return (
-    <ProfileProvider>
-      <AttendanceProvider>
-        <div className="min-h-screen lg:grid lg:grid-cols-[248px_1fr]">
+    <AttendanceProvider>
+      <div className="min-h-screen lg:grid lg:grid-cols-[248px_1fr]">
           {/* Desktop sidebar */}
           <aside className="hidden lg:flex sticky top-0 h-screen flex-col border-r border-border bg-surface px-5 py-7">
             <Logo className="mb-10" />
@@ -118,8 +116,7 @@ export function AppFrame({
               })}
             </div>
           </nav>
-        </div>
-      </AttendanceProvider>
-    </ProfileProvider>
+      </div>
+    </AttendanceProvider>
   );
 }

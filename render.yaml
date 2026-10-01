@@ -8,12 +8,10 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "20"
-      - key: GOOGLE_ATTENDANCE_API_URL
+      - key: SUPABASE_URL
         sync: false
-      - key: MONGO_URL
+      - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
-      - key: DB_NAME
-        value: gmit_attendance
       - key: SESSION_SECRET
         sync: false
       - key: ALLOWED_SECTIONS

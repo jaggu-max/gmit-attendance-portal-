@@ -33,6 +33,8 @@ export async function POST(req: Request) {
       date: body.date,
       teacher: faculty.teacher,
       attendance: body.attendance,
+      logId: body.logId,
+      sessionId: body.sessionId,
     });
     if (json && json.success === false) {
       return NextResponse.json({ error: json.error || "Operation failed.", code: json.code }, { status: 409 });

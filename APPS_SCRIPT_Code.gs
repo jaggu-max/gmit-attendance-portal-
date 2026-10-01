@@ -1,4 +1,7 @@
 /**
+ * LEGACY ONLY — superseded by supabase/migrations/20261001000000_attendance.sql.
+ * Do not deploy this script; the application now uses Supabase RPCs.
+ *
  * GMIT SMART ATTENDANCE — Google Apps Script Web App
  * =====================================================
  * DEPLOY INSTRUCTIONS

@@ -12,19 +12,19 @@ const SECTIONS = ["3A", "3B", "5A", "5B", "7A", "7B"];
 export function LecturerAuth() {
   const router = useRouter();
   const [section, setSection] = useState("");
-  const [courseCode, setCourseCode] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!section || !courseCode.trim()) { setError("Select a section and enter your password."); return; }
+    if (!section || !password) { setError("Select a section and enter your password."); return; }
     setLoading(true);
     try {
       const res = await fetch("/gs/faculty/authorize", {
         method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin",
-        body: JSON.stringify({ section, courseCode: courseCode.trim() }),
+        body: JSON.stringify({ section, password }),
       });
       const json = await res.json();
       if (!res.ok) { setError(json.code === "API_NOT_DEPLOYED" ? friendly(json) : (json.error || "Authorization failed.")); setLoading(false); return; }
@@ -57,8 +57,8 @@ export function LecturerAuth() {
         </div>
 
         <label className="mb-2 mt-5 block text-xs font-bold uppercase tracking-wide text-slate-500">Password</label>
-        <input data-testid="lec-course-input" type="password" value={courseCode} onChange={(e) => setCourseCode(e.target.value.toUpperCase())}
-          placeholder="Enter password" autoCapitalize="characters" autoComplete="current-password" spellCheck={false} suppressHydrationWarning
+        <input data-testid="lec-course-input" type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+          placeholder="Enter lecturer password" autoCapitalize="none" autoComplete="current-password" spellCheck={false} suppressHydrationWarning
           className="h-12 w-full rounded-xl border border-white/60 bg-white/60 px-4 font-semibold tracking-wide outline-none focus:border-indigo-600 dark:bg-white/5" />
 
         {error && (

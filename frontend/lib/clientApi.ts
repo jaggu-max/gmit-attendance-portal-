@@ -28,7 +28,7 @@ export async function writeApi(payload: Record<string, unknown>) {
 
 export function friendly(e: any): string {
   if (e?.code === "API_NOT_DEPLOYED")
-    return "The live attendance API isn't upgraded yet. Deploy the provided Apps Script (APPS_SCRIPT_Code.gs) to enable this feature.";
+    return "The attendance database functions aren't deployed yet. Apply the Supabase migration to enable this feature.";
   return e?.message || "Something went wrong.";
 }
 
