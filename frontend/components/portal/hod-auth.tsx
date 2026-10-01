@@ -3,11 +3,12 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Building2, Loader2, AlertCircle, ArrowRight } from "lucide-react";
+import { Building2, Loader2, AlertCircle, ArrowRight, Eye, EyeOff } from "lucide-react";
 
 export function HodAuth() {
   const router = useRouter();
   const [passcode, setPasscode] = useState("");
+  const [showPasscode, setShowPasscode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -33,8 +34,16 @@ export function HodAuth() {
           </div>
         </div>
         <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">Passcode</label>
-        <input type="password" value={passcode} onChange={(e) => setPasscode(e.target.value)} data-testid="hod-passcode"
-          className="h-12 w-full rounded-xl border border-white/60 bg-white/60 px-4 font-semibold outline-none focus:border-emerald-600 dark:bg-white/5" placeholder="••••••••" />
+        <div className="relative">
+          <input type={showPasscode ? "text" : "password"} value={passcode} onChange={(e) => setPasscode(e.target.value)} data-testid="hod-passcode"
+            className="h-12 w-full rounded-xl border border-white/60 bg-white/60 px-4 pr-12 font-semibold outline-none focus:border-emerald-600 dark:bg-white/5" placeholder="••••••••" />
+          <button type="button" onClick={() => setShowPasscode((visible) => !visible)}
+            aria-label={showPasscode ? "Hide passcode" : "Show passcode"}
+            aria-pressed={showPasscode}
+            className="absolute inset-y-0 right-0 flex w-12 items-center justify-center rounded-r-xl text-slate-500 hover:text-emerald-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-600">
+            {showPasscode ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
         {error && <div data-testid="hod-auth-error" className="mt-4 flex items-start gap-2 rounded-xl bg-rose-500/10 px-3 py-2.5 text-sm text-rose-600"><AlertCircle className="mt-0.5 h-4 w-4" /><span>{error}</span></div>}
         <button type="submit" disabled={loading} data-testid="hod-auth-submit"
           className="mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 font-bold text-white transition hover:bg-emerald-700 disabled:opacity-60">

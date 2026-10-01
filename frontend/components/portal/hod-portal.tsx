@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
-  LayoutDashboard, Building2, BookOpen, History, AlertTriangle, BarChart3, Download, Loader2, Users, CheckCircle2, AlertCircle, UserPlus, Pencil, Save, X, KeyRound,
+  LayoutDashboard, Building2, BookOpen, History, AlertTriangle, BarChart3, Download, Loader2, Users, CheckCircle2, AlertCircle, UserPlus, Pencil, Save, X, KeyRound, Eye, EyeOff,
 } from "lucide-react";
 import { PortalShell, GlassCard, type NavItem } from "./portal-shell";
 import { readApi, friendly, prettyDate } from "@/lib/clientApi";
@@ -65,6 +65,8 @@ export function HodPortal() {
   const [passwordSubject, setPasswordSubject] = useState<any>(null);
   const [facultyPassword, setFacultyPassword] = useState("");
   const [facultyPasswordConfirm, setFacultyPasswordConfirm] = useState("");
+  const [showFacultyPassword, setShowFacultyPassword] = useState(false);
+  const [showFacultyPasswordConfirm, setShowFacultyPasswordConfirm] = useState(false);
   const [facultyPasswordSaving, setFacultyPasswordSaving] = useState(false);
   const [facultyPasswordMessage, setFacultyPasswordMessage] = useState<{ error: boolean; text: string } | null>(null);
   
@@ -801,29 +803,51 @@ export function HodPortal() {
               <form onSubmit={assignFacultyPassword} className="mt-4 grid gap-3 sm:grid-cols-2">
                 <label className="text-xs font-bold uppercase text-slate-500">
                   New password
-                  <input
-                    required
-                    type="password"
-                    minLength={12}
-                    maxLength={72}
-                    autoComplete="new-password"
-                    value={facultyPassword}
-                    onChange={(event) => setFacultyPassword(event.target.value)}
-                    className="mt-1.5 h-11 w-full rounded-xl border border-white/60 bg-white/70 px-3 text-sm font-medium normal-case text-slate-900 outline-none focus:border-emerald-600 dark:bg-white/5 dark:text-slate-100"
-                  />
+                  <div className="relative mt-1.5">
+                    <input
+                      required
+                      type={showFacultyPassword ? "text" : "password"}
+                      minLength={12}
+                      maxLength={72}
+                      autoComplete="new-password"
+                      value={facultyPassword}
+                      onChange={(event) => setFacultyPassword(event.target.value)}
+                      className="h-11 w-full rounded-xl border border-white/60 bg-white/70 px-3 pr-12 text-sm font-medium normal-case text-slate-900 outline-none focus:border-emerald-600 dark:bg-white/5 dark:text-slate-100"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowFacultyPassword((visible) => !visible)}
+                      aria-label={showFacultyPassword ? "Hide new password" : "Show new password"}
+                      aria-pressed={showFacultyPassword}
+                      className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-xl text-slate-500 hover:text-emerald-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-600"
+                    >
+                      {showFacultyPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                 </label>
                 <label className="text-xs font-bold uppercase text-slate-500">
                   Confirm password
-                  <input
-                    required
-                    type="password"
-                    minLength={12}
-                    maxLength={72}
-                    autoComplete="new-password"
-                    value={facultyPasswordConfirm}
-                    onChange={(event) => setFacultyPasswordConfirm(event.target.value)}
-                    className="mt-1.5 h-11 w-full rounded-xl border border-white/60 bg-white/70 px-3 text-sm font-medium normal-case text-slate-900 outline-none focus:border-emerald-600 dark:bg-white/5 dark:text-slate-100"
-                  />
+                  <div className="relative mt-1.5">
+                    <input
+                      required
+                      type={showFacultyPasswordConfirm ? "text" : "password"}
+                      minLength={12}
+                      maxLength={72}
+                      autoComplete="new-password"
+                      value={facultyPasswordConfirm}
+                      onChange={(event) => setFacultyPasswordConfirm(event.target.value)}
+                      className="h-11 w-full rounded-xl border border-white/60 bg-white/70 px-3 pr-12 text-sm font-medium normal-case text-slate-900 outline-none focus:border-emerald-600 dark:bg-white/5 dark:text-slate-100"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowFacultyPasswordConfirm((visible) => !visible)}
+                      aria-label={showFacultyPasswordConfirm ? "Hide password confirmation" : "Show password confirmation"}
+                      aria-pressed={showFacultyPasswordConfirm}
+                      className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-xl text-slate-500 hover:text-emerald-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-600"
+                    >
+                      {showFacultyPasswordConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                 </label>
                 <div className="sm:col-span-2">
                   <p className="text-xs text-slate-500">
